@@ -5,6 +5,25 @@ A real-time collaborative code editor built using React, Monaco Editor, Yjs, Soc
 Users can create or join rooms using unique room codes and collaborate together in real time.
 
 ---
+## Screenshots
+
+### Home Page
+
+![Home Page](./screenshots/RTE1.png)
+
+---
+
+### Collaborative Editor
+
+![Collaborative Editor](./screenshots/RTE2.png)
+
+---
+
+### Collapsed Sidebar View
+
+![Collapsed Sidebar](./screenshots/RTE3.png)
+
+---
 
 ## Features
 
