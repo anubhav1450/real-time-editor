@@ -3,7 +3,11 @@ import { MonacoBinding } from "y-monaco"
 import { useRef, useMemo, useState, useEffect } from "react"
 import * as Y from "yjs"
 import { SocketIOProvider } from "y-socket.io"
-import { useParams, useSearchParams, useNavigate } from "react-router-dom"
+import {
+  useParams,
+  useSearchParams,
+  useNavigate
+} from "react-router-dom"
 
 function EditorPage() {
 
@@ -12,6 +16,7 @@ function EditorPage() {
   const [users, setUsers] = useState([])
   const [copied, setCopied] = useState(false)
   const [newRoomCode, setNewRoomCode] = useState("")
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const { roomId } = useParams()
 
@@ -109,92 +114,139 @@ function EditorPage() {
   }
 
   return (
-   <main className="h-screen w-full bg-[#0f0f0f] flex gap-4 p-4 overflow-hidden">
 
-      <aside className="w-[320px] min-w-[320px] bg-neutral-900 rounded-2xl border border-neutral-800 flex flex-col overflow-hidden">
+    <main className="h-screen w-full bg-[#0f0f0f] flex gap-4 p-4 overflow-hidden">
 
-        <div className="p-5 border-b border-neutral-800">
+      <aside
+        className={`
+          ${sidebarOpen ? "w-[260px] min-w-[260px]" : "w-[70px] min-w-[70px]"}
+          bg-neutral-900 rounded-2xl border border-neutral-800
+          flex flex-col overflow-hidden transition-all duration-300
+        `}
+      >
 
-          <h1 className="text-2xl font-bold text-white">
-            Real Time Editor
-          </h1>
+        <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
 
-          <p className="text-neutral-400 text-sm mt-2">
-            Share this room code with your friends
-          </p>
+          {sidebarOpen && (
+            <h1 className="text-lg font-bold text-white">
+              Editor
+            </h1>
+          )}
 
-          <div className="mt-5 bg-black border border-neutral-700 rounded-xl p-4">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="text-white hover:text-green-400 transition-all"
+          >
+            ☰
+          </button>
 
-            <p className="text-neutral-400 text-xs mb-2">
-              ROOM CODE
+        </div>
+
+        {sidebarOpen && (
+
+          <div className="p-5 border-b border-neutral-800">
+
+            <p className="text-neutral-400 text-sm">
+              Share this room code
             </p>
 
-            <div className="text-center mb-4">
+            <div className="mt-3 bg-black border border-neutral-700 rounded-xl p-2.5">
 
-              <span className="text-2xl font-bold tracking-[6px] text-green-400 break-all">
-                {roomId}
-              </span>
+              <p className="text-neutral-400 text-xs mb-2">
+                ROOM CODE
+              </p>
 
-            </div>
+              <div className="text-center mb-3">
 
-            <div className="flex flex-col gap-3">
+                <span className="text-lg font-bold tracking-[4px] text-green-400 break-all">
+                  {roomId}
+                </span>
 
-              <button
-                onClick={handleCopyCode}
-                className="w-full bg-green-500 hover:bg-green-600 transition-all text-white px-4 py-2 rounded-lg text-sm font-semibold"
-              >
-                {copied ? "Copied!" : "Copy Code"}
-              </button>
+              </div>
 
               <div className="flex flex-col gap-2">
 
-                <input
-                  type="text"
-                  placeholder="Enter Room Code"
-                  value={newRoomCode}
-                  onChange={(e) => setNewRoomCode(e.target.value.toUpperCase())}
-                  className="w-full bg-neutral-900 border border-neutral-700 text-white px-4 py-2 rounded-lg outline-none"
-                />
-
                 <button
-                  onClick={handleJoinAnotherRoom}
-                  className="w-full bg-red-500 hover:bg-red-600 transition-all text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  onClick={handleCopyCode}
+                  className="w-full bg-green-500 hover:bg-green-600 transition-all text-white px-3 py-2 rounded-lg text-sm font-semibold"
                 >
-                  Join Room
+                  {copied ? "Copied!" : "Copy Code"}
                 </button>
+
+                <div className="flex flex-col gap-1.5">
+
+                  <input
+                    type="text"
+                    placeholder="Enter Room Code"
+                    value={newRoomCode}
+                    onChange={(e) =>
+                      setNewRoomCode(e.target.value.toUpperCase())
+                    }
+                    className="w-full bg-neutral-900 border border-neutral-700 text-white px-4 py-2 rounded-lg outline-none"
+                  />
+
+                  <button
+                    onClick={handleJoinAnotherRoom}
+                    className="w-full bg-red-500 hover:bg-red-600 transition-all text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    Join Room
+                  </button>
+
+                </div>
 
               </div>
 
             </div>
 
           </div>
+        )}
 
-        </div>
+        <div className="flex-1 overflow-y-auto p-3">
 
-        <div className="p-5 flex-1 overflow-y-auto">
+          {sidebarOpen ? (
 
-          <h2 className="text-lg font-semibold text-white mb-4">
-            Active Users
-          </h2>
+            <>
+              <h2 className="text-lg font-semibold text-white mb-4">
+                Active Users
+              </h2>
 
-          <ul className="space-y-3">
+              <ul className="space-y-3">
 
-            {users.map((user, index) => (
-              <li
-                key={index}
-                className="bg-neutral-800 border border-neutral-700 text-white p-3 rounded-xl flex items-center gap-3"
-              >
+                {users.map((user, index) => (
+                  <li
+                    key={index}
+                    className="bg-neutral-800 border border-neutral-700 text-white p-3 rounded-xl flex items-center gap-3"
+                  >
 
-                <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
 
-                <span className="font-medium break-all">
-                  {user.username}
-                </span>
+                    <span className="font-medium break-all">
+                      {user.username}
+                    </span>
 
-              </li>
-            ))}
+                  </li>
+                ))}
 
-          </ul>
+              </ul>
+            </>
+
+          ) : (
+
+            <div className="flex flex-col items-center gap-3 mt-2">
+
+              {users.map((user, index) => (
+                <div
+                  key={index}
+                  title={user.username}
+                  className="w-9 h-9 rounded-full bg-green-500 text-white flex items-center justify-center font-bold"
+                >
+                  {user.username.charAt(0).toUpperCase()}
+                </div>
+              ))}
+
+            </div>
+
+          )}
 
         </div>
 
