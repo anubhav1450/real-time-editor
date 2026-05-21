@@ -1,6 +1,6 @@
-# Real-Time Collaborative Code Editor
+# Real-Time Collaborative Editor
 
-A real-time collaborative code editor built using React, Monaco Editor, Yjs, Socket.io, and Node.js.
+A real-time collaborative editor built using React, Monaco Editor, Yjs, Socket.io, and Node.js.
 
 Users can create or join rooms using unique room codes and collaborate together in real time.
 
