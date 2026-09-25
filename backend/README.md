@@ -117,3 +117,29 @@ Runs on:
 ```txt
 http://localhost:3000
 ```
+
+---
+
+## Environment Variables
+
+| Variable        | Default | Description |
+| --------------- | ------- | ----------- |
+| `PORT`          | `3000`  | Port to listen on (set automatically by most hosts) |
+| `CLIENT_ORIGIN` | *(any)* | Allowed frontend origin(s), comma separated, e.g. `https://my-editor.vercel.app` |
+
+---
+
+## Endpoints
+
+- `GET /` – simple "server is running" message
+- `GET /health` – health check with the number of active rooms and uptime
+
+---
+
+## Deployment
+
+The server keeps long-lived WebSocket connections and holds each room in memory,
+so it needs an always-on Node host (Render, Railway, Fly.io…), not a serverless
+platform like Vercel.
+
+A `render.yaml` blueprint is included at the repo root for one-click deploys on Render.

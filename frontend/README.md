@@ -87,8 +87,11 @@ Result:
 
 - Create room
 - Join room using room code
-- Copy room code
-- Active users panel
+- Copy room code or a shareable invite link
+- Active users panel with a color per user
+- Live cursors and selections with name tags
+- Language picker, synced for everyone in the room
+- Connection status indicator (Live / Syncing / Offline)
 - Join another room instantly
 - Realtime collaborative editing
 
@@ -116,3 +119,23 @@ Runs on:
 ```txt
 http://localhost:5173
 ```
+
+---
+
+## Environment Variables
+
+Copy `.env.example` to `.env` to change them.
+
+| Variable          | Default                 | Description |
+| ----------------- | ----------------------- | ----------- |
+| `VITE_SERVER_URL` | `http://localhost:3000` | URL of the backend Socket.io server |
+
+---
+
+## Deploying to Vercel
+
+- Root directory: `frontend`
+- Framework preset: Vite
+- Environment variable: `VITE_SERVER_URL` = your backend URL
+
+`vercel.json` rewrites every path to `index.html` so links like `/room/ABC123` work on refresh.

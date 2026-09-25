@@ -1,67 +1,118 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { nanoid,customAlphabet } from "nanoid"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { customAlphabet } from "nanoid"
+import {
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  USERNAME_MAX_LENGTH,
+  normalizeRoomCode,
+  normalizeUsername
+} from "../config"
+
+
+const generateRoomCode = customAlphabet(ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH)
+
+const USERNAME_KEY = "rte:username"
+
+function readSavedUsername() {
+  try {
+    return localStorage.getItem(USERNAME_KEY) || ""
+  } catch {
+    return ""
+  }
+}
+
+function saveUsername(username) {
+  try {
+    localStorage.setItem(USERNAME_KEY, username)
+  } catch {
+    // storage can be blocked (private mode); the name just won't be remembered
+  }
+}
 
 
 function Home() {
 
-  const [username, setUsername] = useState("")
-  const [roomCode, setRoomCode] = useState("")
+  const [searchParams] = useSearchParams()
+
+  const [username, setUsername] = useState(readSavedUsername)
+  const [roomCode, setRoomCode] = useState(
+    normalizeRoomCode(searchParams.get("room") || "")
+  )
+  const [error, setError] = useState("")
 
   const navigate = useNavigate()
-  const generateRoomCode = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-  6
-)
 
-  const handleCreateRoom = () => {
+  const goToRoom = (roomId) => {
 
-    if (!username.trim()) {
-      alert("Please enter username")
+    const name = normalizeUsername(username)
+
+    if (!name) {
+      setError("Please enter a username")
       return
     }
 
-    const roomId = generateRoomCode()
+    saveUsername(name)
 
-    navigate(`/room/${roomId}?username=${username}`)
+    navigate(`/room/${roomId}?username=${encodeURIComponent(name)}`)
   }
 
-  const handleJoinRoom = () => {
+  const handleCreateRoom = () => {
+    goToRoom(generateRoomCode())
+  }
 
-    if (!username.trim()) {
-      alert("Please enter username")
+  const handleJoinRoom = (e) => {
+
+    e.preventDefault()
+
+    const code = normalizeRoomCode(roomCode)
+
+    if (!code) {
+      setError(username.trim() ? "Please enter a room code" : "Please enter a username")
       return
     }
 
-    if (!roomCode.trim()) {
-      alert("Please enter room code")
-      return
-    }
-
-    navigate(`/room/${roomCode}?username=${username}`)
+    goToRoom(code)
   }
 
   return (
-    <main className="h-screen w-full bg-gray-950 flex items-center justify-center p-4">
+    <main className="min-h-screen w-full bg-gray-950 flex items-center justify-center p-4">
 
-      <div className="bg-neutral-900 p-8 rounded-xl flex flex-col gap-5 w-[400px]">
+      <div className="bg-neutral-900 p-6 sm:p-8 rounded-xl flex flex-col gap-5 w-full max-w-[400px]">
 
-        <h1 className="text-white text-3xl font-bold text-center">
-          Real Time Editor
-        </h1>
+        <div className="text-center">
+
+          <h1 className="text-white text-3xl font-bold">
+            Real Time Editor
+          </h1>
+
+          <p className="text-neutral-400 text-sm mt-2">
+            Write code together, live, with anyone who has your room code.
+          </p>
+
+        </div>
 
         <input
           type="text"
           placeholder="Enter username"
-          className="p-3 rounded bg-neutral-800 text-white outline-none"
+          aria-label="Username"
+          maxLength={USERNAME_MAX_LENGTH}
+          className="p-3 rounded bg-neutral-800 text-white outline-none focus:ring-2 focus:ring-green-500"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={(e) => {
+            setUsername(e.target.value)
+            setError("")
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !roomCode) handleCreateRoom()
+          }}
+          autoFocus={!username}
         />
 
         <button
           type="button"
           onClick={handleCreateRoom}
-          className="bg-amber-50 text-black font-bold p-3 rounded"
+          className="bg-amber-50 hover:bg-white transition-all text-black font-bold p-3 rounded"
         >
           Create New Room
         </button>
@@ -78,21 +129,36 @@ function Home() {
 
         </div>
 
-        <input
-          type="text"
-          placeholder="Enter room code"
-          className="p-3 rounded bg-neutral-800 text-white outline-none"
-          value={roomCode}
-          onChange={(e) => setRoomCode(e.target.value)}
-        />
+        <form onSubmit={handleJoinRoom} className="flex flex-col gap-5">
 
-        <button
-          type="button"
-          onClick={handleJoinRoom}
-          className="bg-green-500 text-white font-bold p-3 rounded"
-        >
-          Join Room
-        </button>
+          <input
+            type="text"
+            placeholder="Enter room code"
+            aria-label="Room code"
+            maxLength={16}
+            className="p-3 rounded bg-neutral-800 text-white outline-none tracking-widest uppercase placeholder:normal-case placeholder:tracking-normal focus:ring-2 focus:ring-green-500"
+            value={roomCode}
+            onChange={(e) => {
+              setRoomCode(normalizeRoomCode(e.target.value))
+              setError("")
+            }}
+            autoFocus={Boolean(username)}
+          />
+
+          <button
+            type="submit"
+            className="bg-green-500 hover:bg-green-600 transition-all text-white font-bold p-3 rounded"
+          >
+            Join Room
+          </button>
+
+        </form>
+
+        {error && (
+          <p role="alert" className="text-red-400 text-sm text-center -mt-1">
+            {error}
+          </p>
+        )}
 
       </div>
 

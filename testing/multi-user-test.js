@@ -1,46 +1,74 @@
 const { chromium } = require('playwright')
 
+// Usage:
+//   node multi-user-test.js
+//   BASE_URL=https://your-app.vercel.app USERS=5 HEADLESS=true node multi-user-test.js
+//   CHANNEL=chrome node multi-user-test.js   (use installed Chrome instead of Playwright's)
+const BASE_URL = (process.env.BASE_URL || 'http://localhost:5173').replace(/\/$/, '')
+const USERS = Number(process.env.USERS || 15)
+const HEADLESS = process.env.HEADLESS === 'true'
+const CHANNEL = process.env.CHANNEL || undefined
+const ROOM_CODE = process.env.ROOM_CODE || `TEST${Date.now().toString(36).toUpperCase().slice(-4)}`
+
+const MESSAGE = 'Hello from user0'
+
 async function test() {
 
   const browser = await chromium.launch({
-    headless: false
+    headless: HEADLESS,
+    channel: CHANNEL
   })
 
   const pages = []
 
-  const ROOM_CODE = 'TEST01'
-
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < USERS; i++) {
 
     const page = await browser.newPage()
 
     await page.goto(
-      `http://localhost:5173/room/${ROOM_CODE}?username=user${i}`
+      `${BASE_URL}/room/${ROOM_CODE}?username=user${i}`
     )
 
     pages.push(page)
   }
 
-  await pages[0].waitForTimeout(3000)
+  // Wait until every editor is mounted and connected.
+  for (const page of pages) {
+    await page.waitForSelector('.monaco-editor')
+    await page.getByText('Live').waitFor({ timeout: 60000 })
+  }
 
   await pages[0].click('.monaco-editor')
 
-  await pages[0].keyboard.type('Hello from user0')
+  await pages[0].keyboard.type(MESSAGE)
 
   await pages[0].waitForTimeout(2000)
 
-  console.log('\n===== SYNC RESULTS =====\n')
+  console.log(`\n===== SYNC RESULTS (room ${ROOM_CODE}) =====\n`)
+
+  let failed = 0
 
   for (let i = 0; i < pages.length; i++) {
 
     const content = await pages[i].evaluate(() => {
-      return window.monaco.editor.getModels()[0].getValue()
+      return window.monaco.editor.getEditors()[0].getValue()
     })
 
-    console.log(`User${i}:`, content)
+    const ok = content === MESSAGE
+
+    if (!ok) failed++
+
+    console.log(`${ok ? 'PASS' : 'FAIL'}  user${i}:`, JSON.stringify(content))
   }
 
-  console.log('\n========================\n')
+  console.log(`\n${USERS - failed}/${USERS} users in sync\n`)
+
+  await browser.close()
+
+  process.exit(failed ? 1 : 0)
 }
 
-test()
+test().catch(error => {
+  console.error(error)
+  process.exit(1)
+})

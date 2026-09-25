@@ -1,6 +1,7 @@
+import "../lib/monaco"
 import { Editor } from "@monaco-editor/react"
 import { MonacoBinding } from "y-monaco"
-import { useRef, useMemo, useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import * as Y from "yjs"
 import { SocketIOProvider } from "y-socket.io"
 import {
@@ -8,118 +9,241 @@ import {
   useSearchParams,
   useNavigate
 } from "react-router-dom"
+import {
+  SERVER_URL,
+  LANGUAGES,
+  USER_COLORS,
+  normalizeRoomCode,
+  normalizeUsername
+} from "../config"
+
+
+const STATUS_STYLES = {
+  connected: { dot: "bg-green-400", label: "Live" },
+  connecting: { dot: "bg-yellow-400 animate-pulse", label: "Connecting…" },
+  disconnected: { dot: "bg-red-500", label: "Offline" },
+}
+
+// Label shown next to a remote cursor. Keep it CSS-string safe.
+function cssLabel(text) {
+  return text.replace(/["\\\n\r]/g, "")
+}
+
+function pickColor(clientId) {
+  return USER_COLORS[clientId % USER_COLORS.length]
+}
+
+// Colors come from other clients, so only trust plain hex values.
+function safeColor(color, clientId) {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : pickColor(clientId)
+}
+
 
 function EditorPage() {
 
-  const editorRef = useRef(null)
-
+  const [editor, setEditor] = useState(null)
+  const [session, setSession] = useState(null)
+  const [status, setStatus] = useState("connecting")
+  const [synced, setSynced] = useState(false)
+  const [slowConnect, setSlowConnect] = useState(false)
   const [users, setUsers] = useState([])
-  const [copied, setCopied] = useState(false)
+  const [language, setLanguage] = useState("javascript")
+  const [copied, setCopied] = useState("")
   const [newRoomCode, setNewRoomCode] = useState("")
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => window.innerWidth >= 768
+  )
 
-  const { roomId } = useParams()
+  const params = useParams()
+  const roomId = normalizeRoomCode(params.roomId || "")
 
   const [searchParams] = useSearchParams()
 
   const navigate = useNavigate()
 
-  const username = searchParams.get("username")
+  const username = normalizeUsername(searchParams.get("username") || "")
 
   useEffect(() => {
     if (!username) {
-      navigate("/")
+      // Someone opened an invite link: ask for a name, keep the room code.
+      navigate(`/?room=${roomId}`, { replace: true })
     }
-  }, [username])
+  }, [username, roomId, navigate])
 
-  const ydoc = useMemo(() => new Y.Doc(), [])
 
-  const yText = useMemo(() => {
-    return ydoc.getText(roomId)
-  }, [ydoc, roomId])
-
-  const handleMount = (editor) => {
-
-    editorRef.current = editor
-
-    new MonacoBinding(
-      yText,
-      editorRef.current.getModel(),
-      new Set([editorRef.current]),
-    )
-  }
-
+  // One Yjs document + socket connection per room.
   useEffect(() => {
 
-    if (username) {
+    if (!username || !roomId) return
 
-      const provider = new SocketIOProvider(
-        "http://localhost:3000",
-        roomId,
-        ydoc,
-        {
-          autoConnect: true,
+    const doc = new Y.Doc()
+
+    const provider = new SocketIOProvider(
+      SERVER_URL,
+      roomId,
+      doc,
+      { autoConnect: true }
+    )
+
+    provider.awareness.setLocalStateField("user", {
+      username,
+      color: pickColor(doc.clientID)
+    })
+
+    const updateUsers = () => {
+      const list = []
+      provider.awareness.getStates().forEach((state, clientId) => {
+        if (state.user?.username) {
+          list.push({
+            clientId,
+            username: normalizeUsername(String(state.user.username)),
+            color: safeColor(state.user.color, clientId),
+            isSelf: clientId === doc.clientID
+          })
         }
-      )
+      })
+      list.sort((a, b) => Number(b.isSelf) - Number(a.isSelf))
+      setUsers(list)
+    }
 
-      provider.awareness.setLocalStateField("user", { username })
+    const settings = doc.getMap("settings")
 
-      const updateUsers = () => {
+    const updateLanguage = () => {
+      setLanguage(settings.get("language") || "javascript")
+    }
 
-        const states = Array.from(
-          provider.awareness.getStates().values()
-        )
+    const handleStatus = ({ status }) => setStatus(status)
+    const handleSync = (isSynced) => setSynced(isSynced)
 
-        setUsers(
-          states
-            .filter(state => state.user && state.user.username)
-            .map(state => state.user)
-        )
-      }
+    provider.on("status", handleStatus)
+    provider.on("sync", handleSync)
+    provider.awareness.on("change", updateUsers)
+    settings.observe(updateLanguage)
 
-      updateUsers()
+    const slowTimer = setTimeout(() => setSlowConnect(true), 4000)
 
-      provider.awareness.on("change", updateUsers)
+    setStatus(provider.socket.connected ? "connected" : "connecting")
+    setSynced(false)
+    setSlowConnect(false)
+    updateUsers()
+    updateLanguage()
+    setSession({ doc, provider })
 
-      function handleBeforeUnload() {
-        provider.awareness.setLocalStateField("user", null)
-      }
-
-      window.addEventListener("beforeunload", handleBeforeUnload)
-
-      return () => {
-        provider.disconnect()
-        window.removeEventListener("beforeunload", handleBeforeUnload)
-      }
+    return () => {
+      clearTimeout(slowTimer)
+      settings.unobserve(updateLanguage)
+      provider.awareness.off("change", updateUsers)
+      provider.off("status", handleStatus)
+      provider.off("sync", handleSync)
+      provider.destroy()
+      doc.destroy()
+      setSession(null)
     }
 
   }, [username, roomId])
 
-  const handleCopyCode = async () => {
 
-    await navigator.clipboard.writeText(roomId)
+  // Bind Monaco to the shared text once both exist.
+  useEffect(() => {
 
-    setCopied(true)
+    if (!editor || !session) return
+
+    const binding = new MonacoBinding(
+      session.doc.getText("content"),
+      editor.getModel(),
+      new Set([ editor ]),
+      session.provider.awareness
+    )
+
+    return () => binding.destroy()
+
+  }, [editor, session])
+
+
+  // Colored cursors + name tags for everyone else in the room.
+  const cursorStyles = useMemo(() => {
+    return users
+      .filter(user => !user.isSelf)
+      .map(({ clientId, color, username }) => `
+        .yRemoteSelection-${clientId} { background-color: ${color}40; }
+        .yRemoteSelectionHead-${clientId} {
+          position: absolute;
+          border-left: 2px solid ${color};
+          height: 100%;
+        }
+        .yRemoteSelectionHead-${clientId}::after {
+          content: "${cssLabel(username)}";
+          position: absolute;
+          top: -1.4em;
+          left: -2px;
+          padding: 0 4px;
+          font-size: 11px;
+          line-height: 1.4em;
+          white-space: nowrap;
+          border-radius: 3px 3px 3px 0;
+          color: #0f0f0f;
+          background: ${color};
+          pointer-events: none;
+          z-index: 10;
+        }
+      `)
+      .join("\n")
+  }, [users])
+
+
+  const copyText = async (text, which) => {
+
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      window.prompt("Copy this:", text)
+      return
+    }
+
+    setCopied(which)
 
     setTimeout(() => {
-      setCopied(false)
+      setCopied("")
     }, 2000)
   }
 
-  const handleJoinAnotherRoom = () => {
+  const handleCopyCode = () => copyText(roomId, "code")
 
-    if (!newRoomCode.trim()) return
+  const handleCopyLink = () =>
+    copyText(`${window.location.origin}/room/${roomId}`, "link")
 
-    navigate(`/room/${newRoomCode}?username=${username}`)
+  const handleLanguageChange = (e) => {
+    session?.doc.getMap("settings").set("language", e.target.value)
   }
+
+  const handleJoinAnotherRoom = (e) => {
+
+    e.preventDefault()
+
+    const code = normalizeRoomCode(newRoomCode)
+
+    if (!code || code === roomId) return
+
+    setNewRoomCode("")
+
+    navigate(`/room/${code}?username=${encodeURIComponent(username)}`)
+  }
+
+  const statusStyle = STATUS_STYLES[status] || STATUS_STYLES.connecting
+
+  const showConnectionHint = status !== "connected" && slowConnect
+
+  if (!username) return null
 
   return (
 
-    <main className="h-screen w-full bg-[#0f0f0f] flex gap-4 p-4 overflow-hidden">
+    <main className="h-screen w-full bg-[#0f0f0f] flex gap-2 sm:gap-4 p-2 sm:p-4 overflow-hidden">
+
+      <style>{cursorStyles}</style>
 
       <aside
         className={`
-          ${sidebarOpen ? "w-[260px] min-w-[260px]" : "w-[70px] min-w-[70px]"}
+          ${sidebarOpen ? "w-[260px] min-w-[260px]" : "w-[60px] min-w-[60px] sm:w-[70px] sm:min-w-[70px]"}
           bg-neutral-900 rounded-2xl border border-neutral-800
           flex flex-col overflow-hidden transition-all duration-300
         `}
@@ -128,14 +252,19 @@ function EditorPage() {
         <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
 
           {sidebarOpen && (
-            <h1 className="text-lg font-bold text-white">
+            <button
+              onClick={() => navigate("/")}
+              className="text-lg font-bold text-white hover:text-green-400 transition-all"
+              title="Back to home"
+            >
               Editor
-            </h1>
+            </button>
           )}
 
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-white hover:text-green-400 transition-all"
+            className="text-white hover:text-green-400 transition-all mx-auto sm:mx-0"
+            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
             ☰
           </button>
@@ -166,33 +295,46 @@ function EditorPage() {
 
               <div className="flex flex-col gap-2">
 
-                <button
-                  onClick={handleCopyCode}
-                  className="w-full bg-green-500 hover:bg-green-600 transition-all text-white px-3 py-2 rounded-lg text-sm font-semibold"
-                >
-                  {copied ? "Copied!" : "Copy Code"}
-                </button>
+                <div className="flex gap-2">
 
-                <div className="flex flex-col gap-1.5">
+                  <button
+                    onClick={handleCopyCode}
+                    className="flex-1 whitespace-nowrap bg-green-500 hover:bg-green-600 transition-all text-white px-2 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    {copied === "code" ? "Copied!" : "Copy Code"}
+                  </button>
+
+                  <button
+                    onClick={handleCopyLink}
+                    className="flex-1 whitespace-nowrap bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 transition-all text-white px-2 py-2 rounded-lg text-sm font-semibold"
+                  >
+                    {copied === "link" ? "Copied!" : "Copy Link"}
+                  </button>
+
+                </div>
+
+                <form onSubmit={handleJoinAnotherRoom} className="flex flex-col gap-1.5">
 
                   <input
                     type="text"
                     placeholder="Enter Room Code"
+                    aria-label="Room code to join"
+                    maxLength={16}
                     value={newRoomCode}
                     onChange={(e) =>
-                      setNewRoomCode(e.target.value.toUpperCase())
+                      setNewRoomCode(normalizeRoomCode(e.target.value))
                     }
-                    className="w-full bg-neutral-900 border border-neutral-700 text-white px-4 py-2 rounded-lg outline-none"
+                    className="w-full bg-neutral-900 border border-neutral-700 text-white px-4 py-2 rounded-lg outline-none focus:border-green-500"
                   />
 
                   <button
-                    onClick={handleJoinAnotherRoom}
+                    type="submit"
                     className="w-full bg-red-500 hover:bg-red-600 transition-all text-white px-4 py-2 rounded-lg text-sm font-semibold"
                   >
                     Join Room
                   </button>
 
-                </div>
+                </form>
 
               </div>
 
@@ -208,21 +350,33 @@ function EditorPage() {
             <>
               <h2 className="text-lg font-semibold text-white mb-4">
                 Active Users
+                <span className="text-neutral-500 text-sm font-normal ml-2">
+                  {users.length}
+                </span>
               </h2>
 
               <ul className="space-y-3">
 
-                {users.map((user, index) => (
+                {users.map((user) => (
                   <li
-                    key={index}
+                    key={user.clientId}
                     className="bg-neutral-800 border border-neutral-700 text-white p-3 rounded-xl flex items-center gap-3"
                   >
 
-                    <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                    <div
+                      className="w-3 h-3 min-w-3 rounded-full"
+                      style={{ backgroundColor: user.color }}
+                    ></div>
 
                     <span className="font-medium break-all">
                       {user.username}
                     </span>
+
+                    {user.isSelf && (
+                      <span className="ml-auto text-xs text-neutral-400">
+                        you
+                      </span>
+                    )}
 
                   </li>
                 ))}
@@ -234,11 +388,12 @@ function EditorPage() {
 
             <div className="flex flex-col items-center gap-3 mt-2">
 
-              {users.map((user, index) => (
+              {users.map((user) => (
                 <div
-                  key={index}
+                  key={user.clientId}
                   title={user.username}
-                  className="w-9 h-9 rounded-full bg-green-500 text-white flex items-center justify-center font-bold"
+                  className="w-9 h-9 rounded-full text-black flex items-center justify-center font-bold"
+                  style={{ backgroundColor: user.color }}
                 >
                   {user.username.charAt(0).toUpperCase()}
                 </div>
@@ -252,15 +407,55 @@ function EditorPage() {
 
       </aside>
 
-      <section className="flex-1 min-h-[500px] bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+      <section className="flex-1 min-w-0 min-h-[300px] bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden flex flex-col">
 
-        <Editor
-          height="100%"
-          defaultLanguage="javascript"
-          defaultValue="// Start collaborating..."
-          theme="vs-dark"
-          onMount={handleMount}
-        />
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-neutral-800">
+
+          <select
+            value={language}
+            onChange={handleLanguageChange}
+            aria-label="Language"
+            className="bg-neutral-800 border border-neutral-700 text-white text-sm rounded-lg px-2 py-1 outline-none focus:border-green-500"
+          >
+            {LANGUAGES.map(lang => (
+              <option key={lang.id} value={lang.id}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-2 text-sm text-neutral-300" title={SERVER_URL}>
+            <span className={`w-2.5 h-2.5 rounded-full ${statusStyle.dot}`}></span>
+            {status === "connected" && !synced ? "Syncing…" : statusStyle.label}
+          </div>
+
+        </div>
+
+        {showConnectionHint && (
+          <div className="px-4 py-2 text-sm bg-yellow-500/10 text-yellow-300 border-b border-yellow-500/20">
+            Can't reach the collaboration server yet. If it was idle it may take
+            up to a minute to wake up — your edits will sync once it connects.
+          </div>
+        )}
+
+        <div className="flex-1 min-h-0">
+
+          <Editor
+            height="100%"
+            language={language}
+            theme="vs-dark"
+            onMount={setEditor}
+            loading={<div className="text-neutral-400 text-sm">Loading editor…</div>}
+            options={{
+              fontSize: 14,
+              minimap: { enabled: false },
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              padding: { top: 18 },
+            }}
+          />
+
+        </div>
 
       </section>
 
