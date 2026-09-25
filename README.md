@@ -4,6 +4,11 @@ A real-time collaborative editor built using React, Monaco Editor, Yjs, Socket.i
 
 Users can create or join rooms using unique room codes and collaborate together in real time.
 
+### 🔗 Live Demo: [real-time-editor-eight.vercel.app](https://real-time-editor-eight.vercel.app)
+
+> The backend runs on Render's free plan, so if nobody has used it for a while
+> the first connection can take up to a minute while the server wakes up.
+
 ---
 ## Screenshots
 
