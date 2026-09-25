@@ -1,0 +1,9 @@
+node_modules
+dist
+npm-debug.log*
+.env*
+.vercel
+.git
+.DS_Store
+Dockerfile
+.dockerignore

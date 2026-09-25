@@ -56,6 +56,11 @@ Users can create or join rooms using unique room codes and collaborate together 
 - Socket.io
 - y-socket.io
 
+### Testing & DevOps
+- Playwright (multi-user tests)
+- Docker & Docker Compose
+- Vercel (frontend) + Render (backend)
+
 ---
 
 ## Project Structure
@@ -64,10 +69,13 @@ Users can create or join rooms using unique room codes and collaborate together 
 Real-Time-Editor/
 │
 ├── backend/
+│   ├── Dockerfile
 │   ├── README.md
 │   └── server.js
 │
 ├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf
 │   ├── README.md
 │   ├── vercel.json
 │   └── src/
@@ -80,6 +88,7 @@ Real-Time-Editor/
 ├── testing/
 │   └── multi-user-test.js
 │
+├── docker-compose.yml
 ├── render.yaml
 └── README.md
 ```
@@ -104,15 +113,34 @@ npm install
 npm run dev
 ```
 
+### Run with Docker
+
+```bash
+docker compose up --build
+```
+
+- Frontend: http://localhost:8080
+- Backend: http://localhost:3000
+
+The frontend image is a multi-stage build (Vite build → nginx), and the backend image
+runs as a non-root user with a health check. Give Docker at least 4 GB of memory,
+because bundling Monaco needs it.
+
 ### Multi-user test
 
-With both running:
+The Playwright test opens many users in separate browser sessions in the same room.
+User 0 types, then the test checks that every user sees the same text and that
+every user sees all the others in the Active Users panel.
 
 ```bash
 cd testing
 npm install
-CHANNEL=chrome USERS=5 npm test
+CHANNEL=chrome USERS=20 npm test
 ```
+
+Point it at any deployment with `BASE_URL`, e.g.
+`BASE_URL=https://real-time-editor-eight.vercel.app`. It passes with 20 concurrent
+users against both the Docker setup and the live deployment.
 
 ---
 
@@ -146,7 +174,6 @@ Detailed implementation notes are available inside:
 
 - Persistence
 - Authentication
-- Docker deployment
 - Private rooms
 
 ---

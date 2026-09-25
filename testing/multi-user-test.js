@@ -50,18 +50,24 @@ async function test() {
 
   for (let i = 0; i < pages.length; i++) {
 
-    const content = await pages[i].evaluate(() => {
-      return window.monaco.editor.getEditors()[0].getValue()
-    })
+    const { content, online } = await pages[i].evaluate(() => ({
+      content: window.monaco.editor.getEditors()[0].getValue(),
+      // Every user should see everyone in the Active Users panel.
+      online: document.querySelectorAll('aside li').length
+    }))
 
-    const ok = content === MESSAGE
+    const ok = content === MESSAGE && online === USERS
 
     if (!ok) failed++
 
-    console.log(`${ok ? 'PASS' : 'FAIL'}  user${i}:`, JSON.stringify(content))
+    console.log(
+      `${ok ? 'PASS' : 'FAIL'}  user${i}:`,
+      JSON.stringify(content),
+      `(sees ${online}/${USERS} users online)`
+    )
   }
 
-  console.log(`\n${USERS - failed}/${USERS} users in sync\n`)
+  console.log(`\n${USERS - failed}/${USERS} users in sync with full presence\n`)
 
   await browser.close()
 
